@@ -17,6 +17,13 @@ void print_arr(const int arr[], const int size){
     }
 }
 
+/**
+ * find the sizes of the local_a arrays, they will differ by at most 1
+ * Parameters:
+ * local_a_sizes: pointer to array storing the size of each local array
+ * num_procs: number of processors
+ * ARR_SIZE: total number of elements in array A (and array B)
+*/
 void find_local_a_sizes(int *local_a_sizes, int num_procs, int ARR_SIZE){
     int remainder = ARR_SIZE % num_procs;
     for(int i =num_procs-1;i>-1;i--){
@@ -29,6 +36,13 @@ void find_local_a_sizes(int *local_a_sizes, int num_procs, int ARR_SIZE){
     }
 }
 
+/**
+ * find the indices of A for each local_a array
+ * local_a_indices: pointer to array containing the indices for the start of each local_a in a
+ *  local_a_sizes: pointer to array storing the size of each local array
+ * num_procs: number of processors
+ * ARR_SIZE: total number of elements in array A (and array B)
+*/
 void find_local_a_indices(int *local_a_indices,int *local_a_sizes, int ARR_SIZE, int num_procs){
     local_a_indices[0] = 0;
     int index;
@@ -62,6 +76,19 @@ int binary_search(int arr[], int l, int r, int x) {
     return r; // Return the index of the greatest element that is less than or equal to x
 }
 
+/**
+ * find the starting indices of each local_b array within the larger b array as well
+ * as the size of each of those local_b arrays
+ * Parameters:
+ * local_a_sizes: pointer to array storing the size of each local array
+ * num_procs: number of processors
+ * ARR_SIZE: total number of elements in array A (and array B)
+ * a: the total a array
+ * b: the total b array
+ * local_a_indices: pointer to array containing the indices for the start of each local_a in a
+ * local_b_indices: pointer to array containing the indices for the start of each local_b in b
+ * local_b_sizes: pointer to array storing the size of each local array
+*/
 void find_b_info(int num_procs,int ARR_SIZE, int *a, int *b, int *local_a_sizes, int *local_a_indices, int *local_b_sizes, int *local_b_indices){
     int key_index;
     int key;
@@ -86,7 +113,17 @@ void find_b_info(int num_procs,int ARR_SIZE, int *a, int *b, int *local_a_sizes,
 }
 
 
-
+/**
+ * partitions arrays a and b for parallel merging
+ * local_a_sizes: pointer to array storing the size of each local array
+ * num_procs: number of processors
+ * ARR_SIZE: total number of elements in array A (and array B)
+ * a: the total a array
+ * b: the total b array
+ * local_a_indices: pointer to array containing the indices for the start of each local_a in a
+ * local_b_indices: pointer to array containing the indices for the start of each local_b in b
+ * local_b_sizes: pointer to array storing the size of each local array
+*/
 void partition(int ARR_SIZE, int* a, int* b, int num_procs, int *local_a_sizes,int *local_a_indices,int *local_b_sizes,int *local_b_indices) {
     //allocate memory for each array
     local_a_sizes = (int*)malloc(num_procs*sizeof(int));
@@ -159,7 +196,7 @@ void generate_sorted_arrays(int n, int arr1[], int arr2[]) {
 
 int main(int argc, char *argv[]){
     //initialize variables
-    int ARR_SIZE = 10;
+    int ARR_SIZE = 100;
     int *a;
     int *b;
     MPI_Status status;
@@ -198,6 +235,7 @@ int main(int argc, char *argv[]){
     }
     //wait for all procs to be ready
     MPI_Barrier(MPI_COMM_WORLD);
+    //Broadcast info to all other processes
     MPI_Bcast(local_a_sizes,num_procs,MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(local_a_indices,num_procs,MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(local_b_sizes,num_procs,MPI_INT, 0, MPI_COMM_WORLD);
@@ -239,7 +277,8 @@ int main(int argc, char *argv[]){
     MPI_Gatherv(local_c,size_of_local_c,MPI_INT, c, local_c_sizes,local_c_indices,MPI_INT,0,MPI_COMM_WORLD);
     //stop the clock
     end_time = MPI_Wtime();
-
+    
+    //print output
     if(process_rank==0){
         printf("Array A: ");
         print_arr(a, ARR_SIZE);
