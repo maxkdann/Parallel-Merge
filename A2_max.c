@@ -5,6 +5,13 @@
 #include <time.h>
 #include <math.h>
 
+typedef struct {
+    int *local_a_sizes;
+    int *local_b_sizes;
+    int *local_a_indices;
+    int *local_b_indices;
+} array_info;
+
 /**
  * Prints an array for debugging purposes
  * Parameters:
@@ -15,6 +22,7 @@ void print_arr(const int arr[], const int size){
     for(int i=0;i<size;i++){
         printf("%d, ", arr[i]);
     }
+    printf("\n");
 }
 
 /**
@@ -25,10 +33,10 @@ void print_arr(const int arr[], const int size){
  * ARR_SIZE: total number of elements in array A (and array B)
 */
 void find_local_a_sizes(int *local_a_sizes, int num_procs, int ARR_SIZE){
+    //load balancing
     int remainder = ARR_SIZE % num_procs;
     for(int i =num_procs-1;i>-1;i--){
         local_a_sizes[i] = ARR_SIZE / num_procs;
-        //load balancing
         if(remainder>0){
             local_a_sizes[i]+=1;
             --remainder;
@@ -39,16 +47,17 @@ void find_local_a_sizes(int *local_a_sizes, int num_procs, int ARR_SIZE){
 /**
  * find the indices of A for each local_a array
  * local_a_indices: pointer to array containing the indices for the start of each local_a in a
- *  local_a_sizes: pointer to array storing the size of each local array
+ * local_a_sizes: pointer to array storing the size of each local array
  * num_procs: number of processors
- * ARR_SIZE: total number of elements in array A (and array B)
+ * 
 */
-void find_local_a_indices(int *local_a_indices,int *local_a_sizes, int ARR_SIZE, int num_procs){
-    local_a_indices[0] = 0;
+void find_local_a_indices(int *local_a_indices,int *local_a_sizes, int num_procs){
+    int start = 0;
     int index;
-    for(int i =1;i<num_procs;i++){
-        index = local_a_sizes[i-1]+ local_a_indices[i-1];
-        local_a_indices[i] = index;
+    local_a_indices[0] = start;
+    for (int i = 1; i < num_procs; i++) {
+      index = local_a_sizes[i-1] + local_a_indices[i-1];
+      local_a_indices[i] = index;
     }
 }
 
@@ -61,7 +70,6 @@ void find_local_a_indices(int *local_a_indices,int *local_a_sizes, int ARR_SIZE,
  * x: maximum element
 */
 int binary_search(int arr[], int l, int r, int x) {
-    
     int m;
     while (l <= r) {
         m = l + (r-l)/2;
@@ -76,6 +84,7 @@ int binary_search(int arr[], int l, int r, int x) {
     return r; // Return the index of the greatest element that is less than or equal to x
 }
 
+
 /**
  * find the starting indices of each local_b array within the larger b array as well
  * as the size of each of those local_b arrays
@@ -89,26 +98,22 @@ int binary_search(int arr[], int l, int r, int x) {
  * local_b_indices: pointer to array containing the indices for the start of each local_b in b
  * local_b_sizes: pointer to array storing the size of each local array
 */
-void find_b_info(int num_procs,int ARR_SIZE, int *a, int *b, int *local_a_sizes, int *local_a_indices, int *local_b_sizes, int *local_b_indices){
+void find_b_info(int num_procs,int *local_a_indices,int *local_a_sizes,int *local_b_indices,int *local_b_sizes,int ARR_SIZE, int *a, int *b){
     int key_index;
     int key;
     int size;
+    int curr=0;
     int index;
-    int curr = 0;
-
     for(int i = 0;i<num_procs;i++){
         key_index = local_a_sizes[i] + local_a_indices[i]-1;
         key = a[key_index];
         //find the index of the greatest element that is less than or equal to key
         index = binary_search(b,0,ARR_SIZE-1,key);
-        
         size = index +1 - curr;
         local_b_indices[i] = curr;
         local_b_sizes[i] = size;
         curr = index +1;
-
         index+=local_a_sizes[i+1];
-
     }
 }
 
@@ -124,17 +129,39 @@ void find_b_info(int num_procs,int ARR_SIZE, int *a, int *b, int *local_a_sizes,
  * local_b_indices: pointer to array containing the indices for the start of each local_b in b
  * local_b_sizes: pointer to array storing the size of each local array
 */
-void partition(int ARR_SIZE, int* a, int* b, int num_procs, int *local_a_sizes,int *local_a_indices,int *local_b_sizes,int *local_b_indices) {
-    //allocate memory for each array
-    local_a_sizes = (int*)malloc(num_procs*sizeof(int));
-    local_b_sizes = (int*)malloc(num_procs*sizeof(int));
-    local_a_indices= (int*)malloc(num_procs*sizeof(int));
-    local_b_indices = (int*)malloc(num_procs*sizeof(int));
+void partition(int ARR_SIZE, int* a, int* b, int num_procs, array_info *data) {
+    //initialize arrays to return data
+    int *arr_a_size, *arr_b_size,*arr_a_indices,*arr_b_indices;
 
-    find_local_a_sizes(local_a_sizes,num_procs,ARR_SIZE);
-    find_local_a_indices(local_a_indices,local_a_sizes,ARR_SIZE,num_procs);
+    //malloc space for each array
+    arr_a_size = (int*)malloc(num_procs * sizeof(int));
+    arr_b_size = (int*)malloc(num_procs * sizeof(int));
+    arr_a_indices = (int*)malloc(num_procs * sizeof(int));
+    arr_b_indices = (int*)malloc(num_procs * sizeof(int));
+    
+    //find sizes of local a arrays
+    find_local_a_sizes(arr_a_size,num_procs,ARR_SIZE);
 
-    find_b_info(num_procs,ARR_SIZE,a,b,local_a_sizes,local_a_indices,local_b_sizes,local_b_indices);
+    //determine a_indices
+    find_local_a_indices(arr_a_indices,arr_a_size,num_procs);
+    
+    //find b info
+    find_b_info(num_procs,arr_a_indices,arr_a_size,arr_b_indices,arr_b_size,ARR_SIZE,a,b);
+
+    size_t size_of_array = (sizeof *data->local_a_sizes) * num_procs;
+   
+    // malloc memory for each attribute of array_data struct
+    data->local_a_sizes = malloc(size_of_array);
+    data->local_b_sizes = malloc(size_of_array);
+    data->local_a_indices = malloc(size_of_array);
+    data->local_b_indices = malloc(size_of_array);
+    
+    // initialize array_data struct with appropriate data
+    data->local_a_sizes = arr_a_size;
+    data->local_b_sizes = arr_b_size;
+    data->local_a_indices = arr_a_indices;
+    data->local_b_indices = arr_b_indices;
+    
 }
 
 
@@ -166,6 +193,7 @@ void seq_merge(int local_a[], int local_b[], int local_c[], int size_a, int size
     while (j < size_b) {
         local_c[k++] = local_b[j++];
     }
+
 }
 
 /**
@@ -196,7 +224,7 @@ void generate_sorted_arrays(int n, int arr1[], int arr2[]) {
 
 int main(int argc, char *argv[]){
     //initialize variables
-    int ARR_SIZE = 100;
+    int ARR_SIZE = 10;
     int *a;
     int *b;
     MPI_Status status;
@@ -204,10 +232,7 @@ int main(int argc, char *argv[]){
     int process_rank;
     int num_procs;
 
-    int *local_a_sizes;
-    int *local_b_sizes;
-    int *local_a_indices;
-    int *local_b_indices;
+    array_info *array_data = (array_info *)malloc(sizeof(array_info));
 
     //start MPI
     MPI_Init(&argc, &argv);
@@ -224,26 +249,26 @@ int main(int argc, char *argv[]){
         //generate sorted arrays to be stored in a and b
         generate_sorted_arrays(ARR_SIZE,a,b);
         //partition the data
-        partition(ARR_SIZE,a,b,num_procs,local_a_sizes,local_a_indices,local_b_sizes,local_b_indices);
+        partition(ARR_SIZE,a,b,num_procs,array_data);
     }
     else{
         //allocate memory
-        local_a_sizes = (int*)malloc(num_procs * sizeof(int));
-        local_b_sizes = (int*)malloc(num_procs * sizeof(int));
-        local_a_indices = (int*)malloc(num_procs * sizeof(int));
-        local_b_indices= (int*)malloc(num_procs * sizeof(int));
+        array_data->local_a_sizes = (int*)malloc(num_procs * sizeof(int));
+        array_data->local_b_sizes = (int*)malloc(num_procs * sizeof(int));
+        array_data->local_a_indices = (int*)malloc(num_procs * sizeof(int));
+        array_data->local_b_indices= (int*)malloc(num_procs * sizeof(int));
     }
     //wait for all procs to be ready
     MPI_Barrier(MPI_COMM_WORLD);
     //Broadcast info to all other processes
-    MPI_Bcast(local_a_sizes,num_procs,MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(local_a_indices,num_procs,MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(local_b_sizes,num_procs,MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(local_b_indices,num_procs,MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(array_data->local_a_sizes,num_procs,MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(array_data->local_a_indices,num_procs,MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(array_data->local_b_sizes,num_procs,MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(array_data->local_b_indices,num_procs,MPI_INT, 0, MPI_COMM_WORLD);
 
     //get the length of the local subarrays
-    int size_of_local_a = local_a_sizes[process_rank];
-    int size_of_local_b = local_b_sizes[process_rank];
+    int size_of_local_a = array_data->local_a_sizes[process_rank];
+    int size_of_local_b = array_data->local_b_sizes[process_rank];
 
     //start the clock
     MPI_Barrier(MPI_COMM_WORLD);
@@ -254,8 +279,8 @@ int main(int argc, char *argv[]){
     int *local_b = (int *) malloc(sizeof(int) * size_of_local_b);
 
     //scatter A and B across all processes, noting that sizes can differ
-    MPI_Scatterv(a,local_a_sizes,local_a_indices,MPI_INT,local_a,size_of_local_a,MPI_INT,0,MPI_COMM_WORLD);
-    MPI_Scatterv(b,local_b_sizes,local_b_indices,MPI_INT,local_b,size_of_local_b,MPI_INT,0,MPI_COMM_WORLD);
+    MPI_Scatterv(a,array_data->local_a_sizes,array_data->local_a_indices,MPI_INT,local_a,size_of_local_a,MPI_INT,0,MPI_COMM_WORLD);
+    MPI_Scatterv(b,array_data->local_b_sizes,array_data->local_b_indices,MPI_INT,local_b,size_of_local_b,MPI_INT,0,MPI_COMM_WORLD);
 
     //merge local_a and local_b into local_c
     int size_of_local_c = size_of_local_a+size_of_local_b;
@@ -269,8 +294,8 @@ int main(int argc, char *argv[]){
 
     //populate each instance of local_c
     for(int i=0;i<num_procs;i++){
-        local_c_sizes[i] = local_a_sizes[i]+local_b_sizes[i];
-        local_c_indices[i] = local_a_indices[i]+local_b_indices[i];
+        local_c_sizes[i] = array_data->local_a_sizes[i]+array_data->local_b_sizes[i];
+        local_c_indices[i] = array_data->local_a_indices[i]+array_data->local_b_indices[i];
     }
 
     //gather all local_c instances back to the root process, keeping in mind they can be of different sizes
@@ -295,11 +320,11 @@ int main(int argc, char *argv[]){
         free(a);
         free(b);
     }
-    free(local_a_sizes);
-    free(local_a_indices);  
+    free(array_data->local_a_sizes);
+    free(array_data->local_a_indices);  
     free(local_a);
-    free(local_b_sizes);
-    free(local_b_indices);
+    free(array_data->local_b_sizes);
+    free(array_data->local_b_indices);
     free(local_b);
     free(local_c_sizes);
     free(local_c_indices);
